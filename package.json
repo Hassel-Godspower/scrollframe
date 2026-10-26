@@ -1,0 +1,13 @@
+{
+  "name": "scrollframe",
+  "version": "1.1.0",
+  "description": "Scroll-scrubbed frame-sequence engine and demo site. Turn a video into a cinematic scroll experience. No WebGL, no dependencies.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "python3 -m http.server 3000 --directory public",
+    "render-demo": "python3 tools/render_demo.py assets/demo.mp4 --seconds 8 --fps 24",
+    "frames": "python3 tools/build_frames.py assets/demo.mp4 --out public/frames",
+    "test": "python3 tools/smoke_test.py"
+  }
+}
