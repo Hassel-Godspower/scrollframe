@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "count": 192,
+  "fps": 24,
+  "format": "webp",
+  "pattern": "frame_%05d.webp",
+  "mobileMaxWidth": 768,
+  "sets": {
+    "desktop": {
+      "dir": "d",
+      "width": 1280
+    },
+    "mobile": {
+      "dir": "m",
+      "width": 640
+    }
+  }
+}
