@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scrollframe — cinematic scroll sites from a frame sequence</title>
+<meta name="description" content="Scrollframe is a tiny open-source engine that turns a video into a scroll-scrubbed, cinematic web experience. No WebGL, no dependencies.">
+<meta name="theme-color" content="#050507">
+<meta property="og:title" content="Scrollframe — cinematic scroll, no WebGL">
+<meta property="og:description" content="Turn any video into a scroll-driven website with a 3 KB engine.">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" as="image" href="frames/d/frame_00001.webp" media="(min-width: 769px)">
+<link rel="preload" as="image" href="frames/m/frame_00001.webp" media="(max-width: 768px)">
+<style>
+  :root {
+    --bg: #050507; --fg: #f3f1ec; --muted: #a7a4b0; --line: rgba(255,255,255,.12);
+    --accent: #7cf3d0; --accent-2: #ff6ad5;
+    --gutter: clamp(20px, 6vw, 88px);
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); color: var(--fg); font-family: var(--sans); -webkit-font-smoothing: antialiased; scroll-behavior: auto; }
+  body { overflow-x: hidden; }
+  a { color: inherit; }
+  ::selection { background: var(--accent); color: #000; }
+
+  /* ---------- nav ---------- */
+  nav { position: fixed; z-index: 20; inset: 0 0 auto 0; display: flex; justify-content: space-between; align-items: center;
+        padding: 18px var(--gutter); mix-blend-mode: difference; pointer-events: none; }
+  nav > * { pointer-events: auto; }
+  .logo { font-weight: 700; letter-spacing: -.02em; text-decoration: none; display: flex; align-items: center; gap: 10px; }
+  .logo i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; display: inline-block; }
+  nav .links { display: flex; gap: 22px; font-size: .9rem; }
+  nav .links a { text-decoration: none; opacity: .85; }
+  nav .links a:hover { opacity: 1; }
+  @media (max-width: 560px) { nav .links a:not(:last-child) { display: none; } }
+
+  /* ---------- scroll stage ---------- */
+  /* Track height = how much scrolling the film takes. Taller = slower. */
+  #track { position: relative; height: 800vh; }
+  .pin { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden;
+         background: #000 url("frames/d/frame_00001.webp") center / cover no-repeat; }
+  @media (max-width: 768px) { .pin { background-image: url("frames/m/frame_00001.webp"); } }
+  #stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .vignette { position: absolute; inset: 0; pointer-events: none;
+              background: radial-gradient(120% 90% at 50% 40%, transparent 45%, rgba(0,0,0,.65) 100%),
+                          linear-gradient(transparent 60%, rgba(0,0,0,.6)); }
+
+  .beat { position: absolute; left: var(--gutter); right: var(--gutter); bottom: clamp(88px, 16vh, 170px);
+          max-width: 46rem; opacity: 0; will-change: opacity, transform; }
+  .beat .eyebrow { font-family: var(--mono); font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 1rem; }
+  .beat h1, .beat h2 { font-size: clamp(2.4rem, 8.4vw, 6.4rem); line-height: .96; letter-spacing: -.045em; font-weight: 700; text-wrap: balance; }
+  .beat p { margin-top: 1.1rem; font-size: clamp(1rem, 2.3vw, 1.3rem); color: rgba(243,241,236,.82); max-width: 34rem; line-height: 1.45; }
+  .beat.end { text-align: left; }
+  .btn { display: inline-flex; margin-top: 1.6rem; padding: .95rem 1.4rem; border-radius: 999px; background: var(--fg); color: #000;
+         font-weight: 600; text-decoration: none; transition: transform .2s, background .2s; }
+  .btn:hover { transform: translateY(-2px); background: var(--accent); }
+
+  /* HUD: proves the engine is live */
+  .hud { position: absolute; z-index: 5; right: var(--gutter); bottom: 22px; font-family: var(--mono); font-size: .75rem;
+         color: var(--muted); display: flex; gap: 14px; align-items: center; }
+  .hud b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .rail { position: absolute; z-index: 5; left: var(--gutter); right: calc(var(--gutter) + 210px); bottom: 30px; height: 2px; background: var(--line); }
+  .rail i { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+  @media (max-width: 560px) { .rail { right: var(--gutter); bottom: 54px; } .hud { left: var(--gutter); right: auto; } }
+
+  .hint { position: absolute; z-index: 5; left: 50%; top: calc(100% - 78px); transform: translateX(-50%); font-family: var(--mono);
+          font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); transition: opacity .4s; display: none; }
+
+  #loader { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; background: var(--bg); transition: opacity .6s .1s, visibility .6s .1s; }
+  #loader.done { opacity: 0; visibility: hidden; }
+  #loader .box { width: min(280px, 70vw); text-align: center; font-family: var(--mono); font-size: .78rem; color: var(--muted); }
+  #loader .meter { margin-top: 14px; height: 2px; background: var(--line); }
+  #loader .meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  #loader.err .meter { display: none; }
+
+  /* ---------- content below ---------- */
+  main { position: relative; z-index: 2; background: var(--bg); }
+  section { padding: clamp(72px, 12vw, 150px) var(--gutter); border-top: 1px solid var(--line); }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h3 { font-size: clamp(1.8rem, 5vw, 3.4rem); letter-spacing: -.035em; line-height: 1.02; max-width: 18ch; text-wrap: balance; }
+  .lede { margin-top: 1.2rem; color: var(--muted); font-size: 1.1rem; max-width: 40rem; line-height: 1.55; }
+  .steps { margin-top: 3rem; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 18px; overflow: hidden;
+           grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .step { background: var(--bg); padding: 28px; }
+  .step small { font-family: var(--mono); color: var(--accent); font-size: .78rem; }
+  .step h4 { margin: .7rem 0 .5rem; font-size: 1.15rem; letter-spacing: -.01em; }
+  .step p { color: var(--muted); line-height: 1.5; font-size: .96rem; }
+  .step code, .lede code { font-family: var(--mono); font-size: .85em; color: var(--fg); background: rgba(255,255,255,.07); padding: .1em .4em; border-radius: 5px; }
+
+  pre { margin-top: 2.2rem; padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: #0a0a0e; overflow-x: auto;
+        font-family: var(--mono); font-size: .82rem; line-height: 1.7; color: #d9d6e0; }
+  pre .c { color: #6f6c7b; } pre .k { color: var(--accent-2); } pre .s { color: var(--accent); }
+
+  .grid { margin-top: 3rem; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { border: 1px solid var(--line); border-radius: 16px; padding: 24px; }
+  .card h4 { font-size: 1.05rem; margin-bottom: .5rem; }
+  .card p { color: var(--muted); font-size: .94rem; line-height: 1.5; }
+  .kpis { margin-top: 3rem; display: flex; gap: clamp(24px, 6vw, 80px); flex-wrap: wrap; }
+  .kpi b { display: block; font-size: clamp(2rem, 6vw, 3.4rem); letter-spacing: -.04em; font-weight: 700; }
+  .kpi span { color: var(--muted); font-size: .9rem; }
+  footer { padding: 40px var(--gutter) 60px; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem;
+           display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+</style>
+</head>
+<body>
+
+<div id="loader"><div class="box"><div id="loadtxt">Loading frames…</div><div class="meter"><i id="loadbar"></i></div></div></div>
+
+<nav>
+  <a class="logo" href="#top"><i></i>Scrollframe</a>
+  <div class="links"><a href="#how">How it works</a><a href="#use">Use it</a><a href="#why">Why</a></div>
+</nav>
+
+<div id="top"></div>
+<div id="track" aria-label="Cinematic scroll demo">
+  <div class="pin">
+    <canvas id="stage" role="img" aria-label="A camera flying through a glowing tunnel, controlled by scrolling"></canvas>
+    <div class="vignette"></div>
+
+    <div class="beat" id="b1">
+      <div class="eyebrow">Open source · 3 KB gzipped · no WebGL</div>
+      <h1>A film you steer with your thumb.</h1>
+      <p>Scroll. Every frame you see is picked by your scroll position.</p>
+    </div>
+    <div class="beat" id="b2">
+      <div class="eyebrow">01 — Depth</div>
+      <h2>Depth, without the 3D engine.</h2>
+      <p>Pre-rendered frames on a canvas. Native scroll. Smooth on the phone in your pocket.</p>
+    </div>
+    <div class="beat" id="b3">
+      <div class="eyebrow">02 — Pace</div>
+      <h2>Eight seconds becomes eight screens.</h2>
+      <p>Make the track taller and the film slows down. You control the tempo.</p>
+    </div>
+    <div class="beat end" id="b4">
+      <div class="eyebrow">03 — Yours</div>
+      <h2>Now make it yours.</h2>
+      <p>Swap the video, keep the engine.</p>
+      <a class="btn" href="#how">See how it works ↓</a>
+    </div>
+
+    <div class="rail"><i id="railfill"></i></div>
+    <div class="hud"><span>frame <b id="hudf">001</b>/<b id="hudn">---</b></span><span><b id="hudp">0</b>%</span></div>
+    <div class="hint" id="hint">Scroll</div>
+  </div>
+</div>
+
+<main>
+  <section id="how">
+    <div class="wrap">
+      <h3>From video to scroll experience in three steps.</h3>
+      <p class="lede">The “3D” you just scrolled through is a pre-rendered clip. The engine turns it into images and plays them forward and backward as you scroll.</p>
+      <div class="steps">
+        <div class="step"><small>01</small><h4>Make a clip</h4><p>Any video: AI-generated, 3D render, drone footage, screen capture. This demo was rendered with <code>tools/render_demo.py</code>.</p></div>
+        <div class="step"><small>02</small><h4>Extract frames</h4><p><code>build_frames.py</code> runs ffmpeg to write a desktop and a mobile WebP set, plus a manifest.</p></div>
+        <div class="step"><small>03</small><h4>Scrub on scroll</h4><p>A sticky canvas stays pinned while a tall track scrolls. Progress picks the frame; easing smooths it.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="use">
+    <div class="wrap">
+      <h3>Drop it into any page.</h3>
+      <p class="lede">No build step, no dependencies. Include one file and describe your scenes.</p>
+<pre><span class="c">&lt;!-- a tall track holding a sticky pin with the canvas --&gt;</span>
+&lt;div id="track" style="height:800vh"&gt;
+  &lt;div style="position:sticky;top:0;height:100svh"&gt;
+    &lt;canvas id="stage" style="width:100%;height:100%"&gt;&lt;/canvas&gt;
+    &lt;h2 id="hello"&gt;Hello&lt;/h2&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+&lt;script src="scrollframe.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  <span class="k">new</span> Scrollframe({
+    track: <span class="s">'#track'</span>,
+    canvas: <span class="s">'#stage'</span>,
+    manifest: <span class="s">'frames/manifest.json'</span>,
+    overlays: [{ el: <span class="s">'#hello'</span>, from: <span class="s">0.1</span>, to: <span class="s">0.4</span> }]
+  });
+&lt;/script&gt;</pre>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="wrap">
+      <h3>Built to be fast and boring in the best way.</h3>
+      <div class="grid">
+        <div class="card"><h4>Progressive loading</h4><p>Loads the first frame, then every 16th, then fills in. The page goes live after about 7% of the frames.</p></div>
+        <div class="card"><h4>Mobile frame set</h4><p>Phones automatically get smaller images. Less data, same feel.</p></div>
+        <div class="card"><h4>Sleeps off-screen</h4><p>The render loop pauses when the track isn’t visible, saving battery.</p></div>
+        <div class="card"><h4>Accessible</h4><p>Real DOM text for SEO, honors <code>prefers-reduced-motion</code>, and has an image alt label.</p></div>
+      </div>
+      <div class="kpis" id="kpis"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>Scrollframe · MIT licensed</span>
+  <span>Edit <code>public/index.html</code> and replace <code>public/frames/</code> to make your own.</span>
+</footer>
+
+<script src="scrollframe.js"></script>
+<script>
+(function () {
+  var pad = function (n, w) { return String(n).padStart(w, '0'); };
+  var $ = function (id) { return document.getElementById(id); };
+  var loader = $('loader'), hint = $('hint');
+  var sf;
+
+  try {
+    sf = new Scrollframe({
+      track: '#track',
+      canvas: '#stage',
+      manifest: 'frames/manifest.json',
+      smoothing: 0.14,
+      overlays: [
+        { el: '#b1', from: 0.00, to: 0.14 },
+        { el: '#b2', from: 0.26, to: 0.42 },
+        { el: '#b3', from: 0.54, to: 0.70 },
+        { el: '#b4', from: 0.84, to: 1.00, fade: 0.05 }
+      ],
+      onProgress: function (p) {
+        $('railfill').style.width = (p * 100) + '%';
+        $('hudp').textContent = Math.round(p * 100);
+        if (sf && sf.count) $('hudf').textContent = pad(Math.round(p * (sf.count - 1)) + 1, 3);
+        hint.style.opacity = p > 0.02 ? 0 : 1;
+      },
+      onLoad: function (f) {
+        $('loadbar').style.width = Math.round(f * 100) + '%';
+      },
+      onReady: function (s) {
+        $('hudn').textContent = pad(s.count, 3);
+        $('hudf').textContent = pad(Math.round(s.progress * (s.count - 1)) + 1, 3);
+        hint.style.display = 'block';
+        loader.classList.add('done');
+        var m = s.manifest, small = window.innerWidth <= (m.mobileMaxWidth || 768);
+        var set = small && m.sets.mobile ? m.sets.mobile : m.sets.desktop;
+        $('kpis').innerHTML =
+          '<div class="kpi"><b>' + s.count + '</b><span>frames in this demo</span></div>' +
+          '<div class="kpi"><b>' + m.fps + '</b><span>fps extracted</span></div>' +
+          '<div class="kpi"><b>' + set.width + 'px</b><span>frame width on this device</span></div>';
+      },
+      onError: function (e) {
+        loader.classList.add('err');
+        $('loadtxt').textContent = 'Could not load frames. ' + (e && e.message ? e.message : '');
+        console.error(e);
+      }
+    });
+  } catch (e) {
+    $('loadtxt').textContent = 'Could not start: ' + e.message;
+  }
+})();
+</script>
+<noscript><style>#loader{display:none}</style></noscript>
+</body>
+</html>
